@@ -32,6 +32,10 @@ jobs:
             echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${VER} — refusing to publish"
             exit 1
           fi
+          if ! grep -q "^## \[${TAG}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no [${TAG}] section (still [Unreleased]?) — rename it, re-sync, re-tag. Refusing to publish."
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v6
 
