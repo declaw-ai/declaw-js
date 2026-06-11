@@ -57,7 +57,6 @@ function getDispatcher(): Promise<unknown | undefined> {
       if (process.env.DECLAW_SDK_DISABLE_DISPATCHER) {
         return undefined;
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const undici: any = await import('undici');
       const connOverride = parseInt(process.env.DECLAW_SDK_CONNECTIONS || '', 10);
       const connections = Number.isFinite(connOverride) && connOverride > 0 ? connOverride : 64;
@@ -250,7 +249,6 @@ export class ApiClient {
         // Pull the cached undici dispatcher (if any). After the first call
         // the promise is already resolved, so this is effectively sync.
         const dispatcher = await getDispatcher();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const fetchOpts: any = {
           method,
           headers,

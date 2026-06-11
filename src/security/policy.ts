@@ -19,7 +19,7 @@ import { parseTransformationRule } from './transformations.js';
 import { parseToxicityConfig, toxicityConfigToJSON } from './toxicity.js';
 import { parseCodeSecurityConfig, codeSecurityConfigToJSON } from './codeSecurity.js';
 import { parseInvisibleTextConfig, invisibleTextConfigToJSON } from './invisibleText.js';
-import { createCustomPolicyConfig, parseCustomPolicyConfig, customPolicyConfigToJSON } from './customPolicy.js';
+import { parseCustomPolicyConfig, customPolicyConfigToJSON } from './customPolicy.js';
 import { parseContentGateConfig, contentGateConfigToJSON } from './contentGate.js';
 
 /** The top-level security policy for a sandbox. */

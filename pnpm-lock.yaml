@@ -42,6 +42,10 @@ importers:
       vitest:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@25.5.0)(msw@2.12.14(@types/node@25.5.0)(typescript@5.9.3))
+    optionalDependencies:
+      undici:
+        specifier: ^7.0.0
+        version: 7.27.2
 
 packages:
 
@@ -1365,6 +1369,10 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
+  undici@7.27.2:
+    resolution: {integrity: sha512-uZsKNuzQxDMUY6M3pIMvy5tvlGmtq8XJ2oLAkfRKGNu+1VQAIvLy2xIVG5ATZl5wDXl/tddByAWCizRbOme+TA==}
+    engines: {node: '>=20.18.1'}
+
   until-async@3.0.2:
     resolution: {integrity: sha512-IiSk4HlzAMqTUseHHe3VhIGyuFmN90zMTpD3Z3y8jeQbzLIq500MVM7Jq2vUAnTKAFPJrqwkzr6PoTcPhGcOiw==}
 
@@ -2611,6 +2619,9 @@ snapshots:
   ufo@1.6.3: {}
 
   undici-types@7.18.2: {}
+
+  undici@7.27.2:
+    optional: true
 
   until-async@3.0.2: {}
 

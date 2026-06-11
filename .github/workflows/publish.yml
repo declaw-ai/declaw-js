@@ -1,0 +1,70 @@
+name: Publish to npm
+
+# Trigger: pushing a vX.Y.Z tag to this repo. The tag is the release
+# button — everything below is automated. To retry a failed run, fix the
+# cause and re-run it (gh run rerun) — the tag ref is preserved.
+#
+# Publishing uses npm Trusted Publishing (OIDC) — no token is stored
+# anywhere — and ships provenance attestation. The publisher must be
+# registered once on npmjs.com:
+#   @declaw/sdk → Settings → Trusted publisher → GitHub Actions →
+#   declaw-ai / declaw-js / publish.yml
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # npm trusted publishing + provenance (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify tag matches package version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${VER} — refusing to publish"
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: |
+          pnpm run typecheck
+          pnpm run lint
+          pnpm test
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Publish to npm (trusted publishing + provenance)
+        run: npm publish --provenance --access public
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VER" '
+            $0 ~ "^## \\[" ver "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > /tmp/notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            --title "@declaw/sdk $GITHUB_REF_NAME" \
+            --notes-file /tmp/notes.md
