@@ -5,6 +5,21 @@ All notable changes to the Declaw TypeScript / JavaScript SDK are documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1]
+
+_HTTP/2 burst performance._
+
+### Performance
+
+- Unblocked HTTP/2 multiplexing on burst create: removed `pipelining: 1`
+  from the undici Agent, which was capping each H2 connection to a single
+  in-flight stream and silently defeating `allowH2` — a 100-concurrent burst
+  queued ~36 requests behind the connection cap. Also: eagerly initialize the
+  undici dispatcher at module load (the lazy `import('undici')` was blocking
+  the first burst), cache the resolved dispatcher synchronously (skips a
+  per-request microtask yield), and lower the retry backoff base from 0.5s to
+  0.1s. No public API change (#359).
+
 ## [1.2.0]
 
 _2026-06 train: file-granular volumes, OPA governance._

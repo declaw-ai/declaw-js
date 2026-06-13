@@ -44,6 +44,14 @@ import {
 // dialed on demand).
 // ---------------------------------------------------------------------------
 let _dispatcherPromise: Promise<unknown | undefined> | undefined;
+// Synchronously-cached resolved dispatcher. Once the import settles we store
+// the value here so the hot path skips `await getDispatcher()` entirely (an
+// await of even a resolved promise costs a microtask yield, which compounds
+// under burst fan-out). `undefined` is a valid resolved state (non-Node / opt
+// out); the separate `_dispatcherResolved` flag distinguishes "resolved to
+// undefined" from "not yet resolved".
+let _resolvedDispatcher: unknown | undefined;
+let _dispatcherResolved = false;
 
 function getDispatcher(): Promise<unknown | undefined> {
   if (_dispatcherPromise) return _dispatcherPromise;
@@ -72,7 +80,14 @@ function getDispatcher(): Promise<unknown | undefined> {
         maxConcurrentStreams,
         keepAliveTimeout: 30_000,
         keepAliveMaxTimeout: 60_000,
-        pipelining: 1,
+        // NOTE: do NOT set `pipelining` here. undici applies it to H2 sessions
+        // too, where `pipelining: 1` caps each connection to ONE in-flight
+        // stream — silently defeating the H2 multiplexing that allowH2 enables.
+        // Omitted, H2 sessions default to unlimited concurrent streams (capped
+        // by maxConcurrentStreams) and H1.1 fallback defaults to 1 (safe, no
+        // head-of-line risk on non-idempotent POSTs). This is the single
+        // biggest burst-latency lever: with pipelining:1 a 100-concurrent burst
+        // queued ~36 requests behind the `connections` cap.
         allowH2: true,
         connect: { keepAlive: true, keepAliveInitialDelay: 5_000 },
       });
@@ -80,8 +95,19 @@ function getDispatcher(): Promise<unknown | undefined> {
       return undefined;
     }
   })();
+  // Cache the resolved value synchronously so the hot path can skip the await.
+  void _dispatcherPromise.then((d) => {
+    _resolvedDispatcher = d;
+    _dispatcherResolved = true;
+  });
   return _dispatcherPromise;
 }
+
+// Eagerly kick off the undici import at module load instead of lazily on the
+// first request. Without this, the first burst of concurrent creates all queue
+// on the one unresolved `import('undici')` (~40-63ms cold). Firing it here moves
+// that cost onto module init, so by the time the first create runs it's ready.
+void getDispatcher();
 
 /**
  * Options for individual API requests.
@@ -128,7 +154,11 @@ export class ApiClient {
   ) {
     this.config = config ?? new ConnectionConfig();
     this.maxRetries = opts?.maxRetries ?? 3;
-    this.retryDelay = opts?.retryDelay ?? 0.5;
+    // Retry backoff base (seconds). Only applies to 5xx/network retries (0ms on
+    // the success path). 0.1s base → delay(0)=50-100ms vs the old 0.5s's
+    // 250-500ms, cutting worst-case single-retry latency 5x. Override per-client
+    // via opts.retryDelay; set 0 to disable backoff entirely.
+    this.retryDelay = opts?.retryDelay ?? 0.1;
     this.abortController = new AbortController();
   }
 
@@ -246,9 +276,10 @@ export class ApiClient {
           ? signals[0]
           : AbortSignal.any(signals);
 
-        // Pull the cached undici dispatcher (if any). After the first call
-        // the promise is already resolved, so this is effectively sync.
-        const dispatcher = await getDispatcher();
+        // Pull the undici dispatcher. Once resolved (eagerly at module load),
+        // read it from the synchronous cache to avoid an await/microtask yield
+        // on every request — only the very first call (pre-resolution) awaits.
+        const dispatcher = _dispatcherResolved ? _resolvedDispatcher : await getDispatcher();
         const fetchOpts: any = {
           method,
           headers,
@@ -322,6 +353,12 @@ export class ApiClient {
     if (response.status === 204 || contentLength === '0') {
       return null;
     }
+    // NOTE: kept as text()+JSON.parse rather than response.json(). The /files
+    // read endpoint returns RAW file contents (non-JSON), and callers expect
+    // the raw string back. response.json() can't support that — it returns
+    // null on non-JSON and has already consumed the single-read body stream, so
+    // a text() fallback is impossible. The ~1-2ms saved isn't worth breaking
+    // raw-body reads or depending on Content-Type sniffing.
     const text = await response.text();
     if (!text) {
       return null;

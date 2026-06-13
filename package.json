@@ -1,6 +1,6 @@
 {
   "name": "@declaw/sdk",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Secure runtime for AI agents - isolated sandboxes with network isolation, PII scanning, prompt injection defense, and egress filtering.",
   "keywords": [
     "sandbox",

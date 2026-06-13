@@ -66,9 +66,16 @@ tag is the release button.
 
    Watch the publish run
    (`gh run list --repo declaw-ai/declaw-js -w publish.yml`), then
-   verify on <https://www.npmjs.com/package/@declaw/sdk>. If it fails,
-   nothing was published — fix the cause and `gh run rerun` (the tag
-   stays).
+   verify on <https://www.npmjs.com/package/@declaw/sdk>.
+
+   **If the run fails** (nothing reaches npm on failure):
+   - *Transient* (runner/network): `gh run rerun` — the tag stays.
+   - *The fix changes repo content* (workflow, tests, packaging): fix in
+     the monorepo → push → re-sync → **delete + re-create the tag** on the
+     new snapshot. A rerun is useless here — tag-push workflows execute
+     from the tagged commit, so the tag must move to the fixed snapshot.
+   - *npm was reached*: never move the tag — ship a patch and deprecate
+     the bad version (below).
 
 ## Deprecating a bad release
 
