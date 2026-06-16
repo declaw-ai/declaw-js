@@ -16,6 +16,23 @@ export enum InjectionAction {
 const VALID_SENSITIVITIES = new Set(Object.values(InjectionSensitivity));
 const VALID_ACTIONS = new Set(Object.values(InjectionAction));
 
+/**
+ * Tier-2 Gemma LLM-judge config. Layered on top of the Tier-1 classifier: the
+ * judge adjudicates the classifier's flags with session context, removing false
+ * positives and catching indirect (cross-domain / multi-turn) injection.
+ * Omitted → classifier only.
+ */
+export interface InjectionJudgeConfig {
+  enabled: boolean;
+  /** Run the judge on every egress, not just classifier flags (costlier). */
+  always?: boolean;
+  /**
+   * Natural-language description of what this agent may do; the judge uses it to
+   * tell task-aligned requests from injection-induced deviations.
+   */
+  policy?: string;
+}
+
 /** Configuration for injection defense. */
 export interface InjectionDefenseConfig {
   enabled: boolean;
@@ -25,6 +42,15 @@ export interface InjectionDefenseConfig {
   threshold: number;
   /** Optional domain allowlist; when undefined, applies to all domains. */
   domains?: string[];
+  /** Optional Tier-2 LLM judge. */
+  judge?: InjectionJudgeConfig;
+  /**
+   * Selects a predefined detection posture for the sandbox.
+   * Valid values: "strict", "balanced", "permissive", "agentic-tool",
+   * "data-egress-sensitive". Omit or set to undefined to use the server default.
+   * Serialized to JSON key "injection_mode".
+   */
+  injectionMode?: string;
 }
 
 /**
@@ -39,6 +65,8 @@ export function createInjectionDefenseConfig(
     action: opts?.action ?? InjectionAction.LogOnly,
     threshold: opts?.threshold ?? 0.8,
     domains: opts?.domains,
+    judge: opts?.judge,
+    injectionMode: opts?.injectionMode,
   };
 
   if (!VALID_SENSITIVITIES.has(config.sensitivity as InjectionSensitivity)) {
@@ -70,5 +98,9 @@ export function parseInjectionDefenseConfig(data: Record<string, any>): Injectio
     action: data.action ?? InjectionAction.LogOnly,
     threshold: data.threshold ?? 0.8,
     domains: data.domains,
+    judge: data.judge
+      ? { enabled: data.judge.enabled ?? false, always: data.judge.always, policy: data.judge.policy }
+      : undefined,
+    injectionMode: data.injection_mode ?? data.injectionMode,
   };
 }

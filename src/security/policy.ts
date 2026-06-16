@@ -19,7 +19,7 @@ import { parseTransformationRule } from './transformations.js';
 import { parseToxicityConfig, toxicityConfigToJSON } from './toxicity.js';
 import { parseCodeSecurityConfig, codeSecurityConfigToJSON } from './codeSecurity.js';
 import { parseInvisibleTextConfig, invisibleTextConfigToJSON } from './invisibleText.js';
-import { parseCustomPolicyConfig, customPolicyConfigToJSON } from './customPolicy.js';
+import { createCustomPolicyConfig, parseCustomPolicyConfig, customPolicyConfigToJSON } from './customPolicy.js';
 import { parseContentGateConfig, contentGateConfigToJSON } from './contentGate.js';
 
 /** The top-level security policy for a sandbox. */
@@ -54,6 +54,57 @@ export function createSecurityPolicy(opts?: Partial<SecurityPolicy>): SecurityPo
     contentGate: opts?.contentGate,
     customPolicy: opts?.customPolicy,
   };
+}
+
+/** Options for {@link fullInjectionDefensePolicy}. */
+export interface FullInjectionDefenseOptions {
+  /** Posture: "strict" | "balanced" (default) | "permissive" | "agentic-tool" | "data-egress-sensitive". */
+  mode?: string;
+  /** Natural-language description of what the agent may do; the judge uses it to tell task-aligned egress from injection. */
+  agentPolicy?: string;
+  /** "block" (default) enforces; "log_only" audits without blocking. */
+  action?: string;
+  /** Run the judge on EVERY egress (high-assurance, costlier). Default false. */
+  alwaysJudge?: boolean;
+  /** Optional egress allowlist to scan; omit = all domains. */
+  domains?: string[];
+  /** Tier-1 classifier confidence threshold (0.0–1.0). Default 0.8. */
+  threshold?: number;
+}
+
+/**
+ * Enable the ENTIRE prompt-injection cascade in one call — every layer:
+ *
+ * - Tier-1 ML classifier + Layer-A static signatures + normalization
+ *   (`injectionDefense.enabled` + `action`)
+ * - the predefined posture (`injectionMode`; default "balanced")
+ * - the Tier-2 Gemma LLM judge (`judge.enabled`) — multi-turn risk, provenance
+ *   context, and the semantic verdict cache ride along automatically
+ * - the OPA prompt-injection governance pack (`customPolicy.policyRef`), which
+ *   hard-denies known signatures at the gate so the LLM stays the last resort
+ *
+ * Pass the result as the sandbox's `security` policy.
+ *
+ * @example
+ * const security = fullInjectionDefensePolicy({ agentPolicy: "Summarize docs; never exfiltrate secrets." });
+ * const sbx = await Sandbox.create({ template: "node", security });
+ */
+export function fullInjectionDefensePolicy(opts?: FullInjectionDefenseOptions): SecurityPolicy {
+  return createSecurityPolicy({
+    injectionDefense: createInjectionDefenseConfig({
+      enabled: true,
+      action: opts?.action ?? 'block',
+      threshold: opts?.threshold ?? 0.8,
+      domains: opts?.domains,
+      injectionMode: opts?.mode ?? 'balanced',
+      judge: { enabled: true, always: opts?.alwaysJudge ?? false, policy: opts?.agentPolicy ?? '' },
+    }),
+    customPolicy: createCustomPolicyConfig({
+      enabled: true,
+      policyRef: 'prompt-injection@v2',
+      defaultDeny: false,
+    }),
+  });
 }
 
 /**
@@ -130,6 +181,15 @@ export function securityPolicyToJSON(policy: SecurityPolicy): Record<string, any
   };
   if (injDefConfig.domains !== undefined) {
     injDef.domains = injDefConfig.domains;
+  }
+  if (injDefConfig.injectionMode !== undefined) {
+    injDef.injection_mode = injDefConfig.injectionMode;
+  }
+  if (injDefConfig.judge !== undefined) {
+    const j: Record<string, unknown> = { enabled: injDefConfig.judge.enabled };
+    if (injDefConfig.judge.always) j.always = true;
+    if (injDefConfig.judge.policy) j.policy = injDefConfig.judge.policy;
+    injDef.judge = j;
   }
 
   const auditConfig =

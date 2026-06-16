@@ -67,7 +67,7 @@ function getDispatcher(): Promise<unknown | undefined> {
       }
       const undici: any = await import('undici');
       const connOverride = parseInt(process.env.DECLAW_SDK_CONNECTIONS || '', 10);
-      const connections = Number.isFinite(connOverride) && connOverride > 0 ? connOverride : 64;
+      const connections = Number.isFinite(connOverride) && connOverride > 0 ? connOverride : 512;
       const streamsOverride = parseInt(process.env.DECLAW_SDK_MAX_CONCURRENT_STREAMS || '', 10);
       const maxConcurrentStreams =
         Number.isFinite(streamsOverride) && streamsOverride > 0 ? streamsOverride : 1000;
@@ -85,9 +85,7 @@ function getDispatcher(): Promise<unknown | undefined> {
         // stream — silently defeating the H2 multiplexing that allowH2 enables.
         // Omitted, H2 sessions default to unlimited concurrent streams (capped
         // by maxConcurrentStreams) and H1.1 fallback defaults to 1 (safe, no
-        // head-of-line risk on non-idempotent POSTs). This is the single
-        // biggest burst-latency lever: with pipelining:1 a 100-concurrent burst
-        // queued ~36 requests behind the `connections` cap.
+        // head-of-line risk on non-idempotent POSTs).
         allowH2: true,
         connect: { keepAlive: true, keepAliveInitialDelay: 5_000 },
       });

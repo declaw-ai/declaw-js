@@ -97,7 +97,7 @@ export {
   createInjectionDefenseConfig,
   parseInjectionDefenseConfig,
 } from './security/injection.js';
-export type { InjectionDefenseConfig } from './security/injection.js';
+export type { InjectionDefenseConfig, InjectionJudgeConfig } from './security/injection.js';
 
 // Security - Audit
 export { createAuditConfig, parseAuditConfig, parseAuditEntry } from './security/audit.js';
@@ -163,11 +163,12 @@ export type { ContentGateConfig } from './security/contentGate.js';
 // Security - Policy
 export {
   createSecurityPolicy,
+  fullInjectionDefensePolicy,
   parseSecurityPolicy,
   securityPolicyToJSON,
   requiresTlsInterception,
 } from './security/policy.js';
-export type { SecurityPolicy } from './security/policy.js';
+export type { SecurityPolicy, FullInjectionDefenseOptions } from './security/policy.js';
 
 // PTY
 export { Pty, PtyHandle } from './sandbox/pty/pty.js';
