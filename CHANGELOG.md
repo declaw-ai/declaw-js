@@ -5,6 +5,17 @@ All notable changes to the Declaw TypeScript / JavaScript SDK are documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2]
+
+_Higher default connection ceiling._
+
+### Performance
+
+- Raised the default connection-pool ceiling from 64 to 512 so a
+  high-concurrency workload from a single client process is no longer queued
+  behind the connection cap. Still overridable via `DECLAW_SDK_CONNECTIONS`.
+  No public API change.
+
 ## [1.2.1]
 
 _HTTP/2 burst performance._
