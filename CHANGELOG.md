@@ -5,6 +5,20 @@ All notable changes to the Declaw TypeScript / JavaScript SDK are documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0]
+
+_2026-07 train: credential vault client + injection domain scoping._
+
+### Added
+
+- Credential vault client — the `Vault` API for managing secrets **by name**:
+  `Vault.createSecret()`, `listSecrets()`, `rotateSecret()`, `deleteSecret()`,
+  `updateScopes()`, and `listPresets()`. Secret values are write-only (never
+  returned after create). Attach secrets to a sandbox with
+  `vaultRefs: { ENV_VAR: "secret-name" }`; the value is injected at the egress
+  proxy and never enters the sandbox (#386, #399, #408, #456).
+- Opt-in domain scoping for full injection defense via the `domains` option.
+
 ## [1.2.3]
 
 _Restore the conservative default connection ceiling._

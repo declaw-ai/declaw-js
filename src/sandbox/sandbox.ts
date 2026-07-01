@@ -13,6 +13,7 @@ import { Pty } from './pty/pty.js';
 import { Stdio } from './stdio/stdio.js';
 import type { VolumeAttachment } from '../volumes/models.js';
 import { volumeAttachmentToJSON } from '../volumes/models.js';
+import { expandVaultRefs } from '../vault/vault.js';
 
 /** Options for creating a sandbox. */
 export interface SandboxOpts {
@@ -24,6 +25,10 @@ export interface SandboxOpts {
   metadata?: Record<string, string>;
   /** Environment variables. */
   envs?: Record<string, string>;
+  /** Vault secret references: ENV_NAME -> "vault://team/env/secret". The real
+   *  value is resolved server+worker-side and injected at the egress proxy —
+   *  the sandbox only ever sees a placeholder, never the secret value. */
+  vaultRefs?: Record<string, string>;
   /** Whether to create a secure sandbox. Defaults to true. */
   secure?: boolean;
   /** If false, denies all outbound traffic. Defaults to true. */
@@ -232,6 +237,9 @@ export class Sandbox {
     }
     if (opts?.envs) {
       body.envs = opts.envs;
+    }
+    if (opts?.vaultRefs) {
+      body.vault_refs = await expandVaultRefs(config, opts.vaultRefs, opts.requestTimeout);
     }
 
     // Network: explicit opts take precedence over allowInternetAccess flag

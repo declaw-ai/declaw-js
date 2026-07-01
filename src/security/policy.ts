@@ -66,9 +66,13 @@ export interface FullInjectionDefenseOptions {
   action?: string;
   /** Run the judge on EVERY egress (high-assurance, costlier). Default false. */
   alwaysJudge?: boolean;
-  /** Optional egress allowlist to scan; omit = all domains. */
+  /**
+   * Destination hosts to scan for injection. Injection is opt-in per domain:
+   * omit or leave empty to scan none. Entries support exact hosts,
+   * `"*.suffix.com"` wildcards, and `"~regex"` patterns.
+   */
   domains?: string[];
-  /** Tier-1 classifier confidence threshold (0.0–1.0). Default 0.8. */
+  /** Tier-1 classifier confidence threshold (0.0–1.0). Default 0.95. */
   threshold?: number;
 }
 
@@ -94,14 +98,14 @@ export function fullInjectionDefensePolicy(opts?: FullInjectionDefenseOptions): 
     injectionDefense: createInjectionDefenseConfig({
       enabled: true,
       action: opts?.action ?? 'block',
-      threshold: opts?.threshold ?? 0.8,
+      threshold: opts?.threshold ?? 0.95,
       domains: opts?.domains,
       injectionMode: opts?.mode ?? 'balanced',
       judge: { enabled: true, always: opts?.alwaysJudge ?? false, policy: opts?.agentPolicy ?? '' },
     }),
     customPolicy: createCustomPolicyConfig({
       enabled: true,
-      policyRef: 'prompt-injection@v2',
+      policyRef: 'prompt-injection@v3',
       defaultDeny: false,
     }),
   });
@@ -179,7 +183,7 @@ export function securityPolicyToJSON(policy: SecurityPolicy): Record<string, any
     action: injDefConfig.action,
     threshold: injDefConfig.threshold,
   };
-  if (injDefConfig.domains !== undefined) {
+  if (injDefConfig.domains !== undefined && injDefConfig.domains.length > 0) {
     injDef.domains = injDefConfig.domains;
   }
   if (injDefConfig.injectionMode !== undefined) {

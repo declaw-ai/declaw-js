@@ -36,10 +36,19 @@ export interface VolumeCreateOpts extends VolumeRequestOpts {
  * are dropped on the server for safety.
  */
 export class Volumes {
-  /** Create a volume by streaming a tarball (gzip tar.gz) to the server. */
+  /**
+   * Create a volume named `name`, optionally populated with `data`.
+   *
+   * `POST /volumes` is the canonical create endpoint. With `data` (a gzip tar.gz)
+   * the body is ingested into a new file-granular volume (or a legacy tarball
+   * blob if no file-granular backend is configured). Creating an empty volume
+   * (no `data`, or an empty buffer) requires a file-granular backend.
+   * `empty(name)` / `ingest(name, data)` remain available for explicit,
+   * backend-specific control.
+   */
   static async create(
     name: string,
-    data: Uint8Array | ArrayBuffer,
+    data?: Uint8Array | ArrayBuffer,
     opts?: VolumeCreateOpts,
   ): Promise<VolumeInfo> {
     if (!name) {
@@ -52,6 +61,15 @@ export class Volumes {
       requestTimeout: opts?.requestTimeout,
     });
     const client = getSharedClient(config);
+
+    if (data === undefined || data.byteLength === 0) {
+      const resp = (await client.post('/volumes', {
+        params: { name },
+        timeout: opts?.requestTimeout,
+      })) as Record<string, unknown>;
+      return parseVolumeInfo(resp);
+    }
+
     const body = data instanceof Uint8Array ? data : new Uint8Array(data);
     const resp = (await client.post('/volumes', {
       params: { name },

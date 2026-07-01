@@ -38,9 +38,15 @@ export interface InjectionDefenseConfig {
   enabled: boolean;
   sensitivity: string;
   action: string;
-  /** Detection threshold (0.0–1.0). Defaults to 0.8. */
+  /** Detection threshold (0.0–1.0). Defaults to 0.95. */
   threshold: number;
-  /** Optional domain allowlist; when undefined, applies to all domains. */
+  /**
+   * Scopes injection scanning to these destination hosts. Injection is
+   * OPT-IN per domain: with an empty or omitted list NO injection scanning
+   * runs (unlike PII/toxicity, where an empty list means all egress).
+   * Entries support exact hosts (`"api.example.com"`), `"*.suffix.com"`
+   * wildcards, and `"~regex"` patterns.
+   */
   domains?: string[];
   /** Optional Tier-2 LLM judge. */
   judge?: InjectionJudgeConfig;
@@ -63,7 +69,7 @@ export function createInjectionDefenseConfig(
     enabled: opts?.enabled ?? false,
     sensitivity: opts?.sensitivity ?? InjectionSensitivity.Medium,
     action: opts?.action ?? InjectionAction.LogOnly,
-    threshold: opts?.threshold ?? 0.8,
+    threshold: opts?.threshold ?? 0.95,
     domains: opts?.domains,
     judge: opts?.judge,
     injectionMode: opts?.injectionMode,
@@ -96,7 +102,7 @@ export function parseInjectionDefenseConfig(data: Record<string, any>): Injectio
     enabled: data.enabled ?? false,
     sensitivity: data.sensitivity ?? InjectionSensitivity.Medium,
     action: data.action ?? InjectionAction.LogOnly,
-    threshold: data.threshold ?? 0.8,
+    threshold: data.threshold ?? 0.95,
     domains: data.domains,
     judge: data.judge
       ? { enabled: data.judge.enabled ?? false, always: data.judge.always, policy: data.judge.policy }

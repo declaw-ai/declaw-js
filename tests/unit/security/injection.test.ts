@@ -29,7 +29,7 @@ describe('createInjectionDefenseConfig', () => {
     expect(config.enabled).toBe(false);
     expect(config.sensitivity).toBe('medium');
     expect(config.action).toBe('log_only');
-    expect(config.threshold).toBe(0.8);
+    expect(config.threshold).toBe(0.95);
     expect(config.domains).toBeUndefined();
   });
 
@@ -74,7 +74,7 @@ describe('parseInjectionDefenseConfig', () => {
     expect(config.enabled).toBe(false);
     expect(config.sensitivity).toBe('medium');
     expect(config.action).toBe('log_only');
-    expect(config.threshold).toBe(0.8);
+    expect(config.threshold).toBe(0.95);
     expect(config.domains).toBeUndefined();
   });
 });
@@ -114,6 +114,35 @@ describe('injectionMode field', () => {
   });
 });
 
+describe('domains field', () => {
+  it('defaults to undefined when not provided', () => {
+    const config = createInjectionDefenseConfig();
+    expect(config.domains).toBeUndefined();
+  });
+
+  it('passes through domains when set via createInjectionDefenseConfig', () => {
+    const config = createInjectionDefenseConfig({
+      domains: ['api.example.com', '*.tools.example.com', '~^pkg\\.'],
+    });
+    expect(config.domains).toEqual(['api.example.com', '*.tools.example.com', '~^pkg\\.']);
+  });
+
+  it('accepts an empty domains list', () => {
+    const config = createInjectionDefenseConfig({ domains: [] });
+    expect(config.domains).toEqual([]);
+  });
+
+  it('parses domains from JSON', () => {
+    const config = parseInjectionDefenseConfig({ domains: ['api.example.com'] });
+    expect(config.domains).toEqual(['api.example.com']);
+  });
+
+  it('leaves domains undefined when key is absent', () => {
+    const config = parseInjectionDefenseConfig({ enabled: true });
+    expect(config.domains).toBeUndefined();
+  });
+});
+
 describe('fullInjectionDefensePolicy', () => {
   it('enables the entire cascade in one call', () => {
     const p = fullInjectionDefensePolicy({ agentPolicy: 'summarize docs' });
@@ -124,7 +153,7 @@ describe('fullInjectionDefensePolicy', () => {
     expect(inj.judge.enabled).toBe(true);
     expect(inj.judge.policy).toBe('summarize docs');
     expect((p.customPolicy as any).enabled).toBe(true);
-    expect((p.customPolicy as any).policyRef).toBe('prompt-injection@v2');
+    expect((p.customPolicy as any).policyRef).toBe('prompt-injection@v3');
   });
 
   it('honors strict mode + alwaysJudge', () => {

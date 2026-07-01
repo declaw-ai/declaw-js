@@ -79,6 +79,7 @@ describe('Sandbox', () => {
         timeout: 600,
         metadata: { project: 'test' },
         envs: { NODE_ENV: 'production' },
+        vaultRefs: { STRIPE_KEY: 'vault://team/prod/stripe' },
         secure: false,
         network: {
           allowOut: ['1.2.3.4'],
@@ -96,6 +97,7 @@ describe('Sandbox', () => {
       expect(capturedBody.timeout).toBe(600);
       expect(capturedBody.metadata).toEqual({ project: 'test' });
       expect(capturedBody.envs).toEqual({ NODE_ENV: 'production' });
+      expect(capturedBody.vault_refs).toEqual({ STRIPE_KEY: 'vault://team/prod/stripe' });
       expect(capturedBody.secure).toBe(false);
       expect(capturedBody.network).toEqual({
         allow_out: ['1.2.3.4'],

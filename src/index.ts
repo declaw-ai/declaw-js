@@ -219,3 +219,18 @@ export { Governance } from './governance/governance.js';
 export type { GovernanceRequestOpts } from './governance/governance.js';
 export { parseGovernancePack } from './governance/models.js';
 export type { GovernancePack, GovernanceControl, GovernanceAdvisory } from './governance/models.js';
+
+// Vault
+export { Vault } from './vault/vault.js';
+export type { VaultRequestOpts, CreateSecretInput } from './vault/vault.js';
+export {
+  parseVaultScope,
+  parseVaultSecret,
+  parseVaultPreset,
+  vaultScopeToJSON,
+} from './vault/models.js';
+export type {
+  VaultScope,
+  VaultSecret,
+  VaultPreset,
+} from './vault/models.js';

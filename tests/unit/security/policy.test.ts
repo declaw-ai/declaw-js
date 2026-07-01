@@ -4,6 +4,7 @@ import {
   parseSecurityPolicy,
   securityPolicyToJSON,
   requiresTlsInterception,
+  fullInjectionDefensePolicy,
 } from '../../../src/security/policy.js';
 import { createPIIConfig } from '../../../src/security/pii.js';
 import { createInjectionDefenseConfig } from '../../../src/security/injection.js';
@@ -335,6 +336,56 @@ describe('securityPolicyToJSON', () => {
     const parsed = parseSecurityPolicy(json);
     expect(parsed.contentGate!.enabled).toBe(false);
     expect(parsed.contentGate!.domains).toBeUndefined();
+  });
+
+  it('serializes injection_defense domains into the "domains" key', () => {
+    const policy = createSecurityPolicy({
+      injectionDefense: createInjectionDefenseConfig({
+        enabled: true,
+        domains: ['api.example.com', '*.tools.example.com'],
+      }),
+    });
+    const json = securityPolicyToJSON(policy);
+    const inj = json.injection_defense as Record<string, unknown>;
+    expect(inj.domains).toEqual(['api.example.com', '*.tools.example.com']);
+  });
+
+  it('omits domains key in injection_defense when domains is undefined', () => {
+    const policy = createSecurityPolicy({
+      injectionDefense: createInjectionDefenseConfig({ enabled: true }),
+    });
+    const json = securityPolicyToJSON(policy);
+    const inj = json.injection_defense as Record<string, unknown>;
+    expect(inj.enabled).toBe(true);
+    expect('domains' in inj).toBe(false);
+  });
+
+  it('omits domains key in injection_defense when domains is empty', () => {
+    const policy = createSecurityPolicy({
+      injectionDefense: createInjectionDefenseConfig({ enabled: true, domains: [] }),
+    });
+    const json = securityPolicyToJSON(policy);
+    const inj = json.injection_defense as Record<string, unknown>;
+    expect('domains' in inj).toBe(false);
+  });
+
+  it('round-trips injection_defense domains through parse', () => {
+    const original = createSecurityPolicy({
+      injectionDefense: createInjectionDefenseConfig({
+        enabled: true,
+        domains: ['api.example.com', '~^pkg\\.'],
+      }),
+    });
+    const json = securityPolicyToJSON(original);
+    const parsed = parseSecurityPolicy(json);
+    expect((parsed.injectionDefense as any).domains).toEqual(['api.example.com', '~^pkg\\.']);
+  });
+
+  it('serializes domains from fullInjectionDefensePolicy', () => {
+    const policy = fullInjectionDefensePolicy({ domains: ['api.example.com'] });
+    const json = securityPolicyToJSON(policy);
+    const inj = json.injection_defense as Record<string, unknown>;
+    expect(inj.domains).toEqual(['api.example.com']);
   });
 });
 

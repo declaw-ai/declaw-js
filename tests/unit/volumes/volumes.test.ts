@@ -140,7 +140,7 @@ describe('parseVolumeInfo (parity fields)', () => {
 });
 
 describe('Volumes.create', () => {
-  it('POSTs tarball bytes with name query + application/gzip Content-Type', async () => {
+  it('with data POSTs gzip bytes to /volumes with name query + application/gzip', async () => {
     let capturedUrl = '';
     let capturedCT = '';
     let capturedBody: Uint8Array | null = null;
@@ -157,6 +157,22 @@ describe('Volumes.create', () => {
     expect(new URL(capturedUrl).searchParams.get('name')).toBe('my-vol');
     expect(capturedCT.toLowerCase()).toContain('application/gzip');
     expect(Array.from(capturedBody!)).toEqual([0x1f, 0x8b, 0x08, 0x00]);
+    expect(vol.volumeId).toBe('vol-new');
+  });
+
+  it('without data POSTs to /volumes with no body (empty volume)', async () => {
+    let capturedUrl = '';
+    let bodyLen = -1;
+    server.use(
+      http.post(`${BASE_URL}/volumes`, async ({ request }) => {
+        capturedUrl = request.url;
+        bodyLen = (await request.arrayBuffer()).byteLength;
+        return HttpResponse.json(COMMIT_RESP, { status: 201 });
+      }),
+    );
+    const vol = await Volumes.create('scratch', undefined, OPTS);
+    expect(new URL(capturedUrl).searchParams.get('name')).toBe('scratch');
+    expect(bodyLen).toBe(0);
     expect(vol.volumeId).toBe('vol-new');
   });
 });
