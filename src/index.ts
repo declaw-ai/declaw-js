@@ -2,6 +2,13 @@
 export { ApiClient, getSharedClient, resetSharedClients } from './api/client.js';
 export type { RequestOpts } from './api/client.js';
 
+// Error codes — branch on SandboxError.code, never on the message.
+export {
+  CODE_IDEMPOTENCY_IN_PROGRESS,
+  CODE_IDEMPOTENCY_KEY_REUSED,
+  CODE_TEMPLATE_NOT_READY,
+} from './api/idempotency.js';
+
 // Sandbox
 export { Sandbox } from './sandbox/sandbox.js';
 export type { SandboxOpts } from './sandbox/sandbox.js';

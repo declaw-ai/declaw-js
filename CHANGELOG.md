@@ -5,6 +5,26 @@ All notable changes to the Declaw TypeScript / JavaScript SDK are documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0]
+
+_2026-08 train: idempotent sandbox creation._
+
+### Added
+
+- `Sandbox.create` now sends an `Idempotency-Key`. A create that times out or is
+  retried no longer risks leaving a second running, billable sandbox the caller
+  has no handle for. The key is generated once per logical create and reused
+  across that call's retries.
+- A `409` carrying `idempotency_in_progress` is retried automatically, honoring
+  `Retry-After`.
+- `SandboxError.code` exposes the API's machine-readable error code, with the
+  `CODE_IDEMPOTENCY_IN_PROGRESS`, `CODE_IDEMPOTENCY_KEY_REUSED` and
+  `CODE_TEMPLATE_NOT_READY` constants exported. Branch on the code, never the
+  message.
+
+_(Retry backoff already carried jitter in this SDK; unlike the Go and Python
+clients it needed no change.)_
+
 ## [1.3.0]
 
 _2026-07 train: credential vault client + injection domain scoping._

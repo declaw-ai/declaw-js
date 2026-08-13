@@ -14,6 +14,7 @@ import { Stdio } from './stdio/stdio.js';
 import type { VolumeAttachment } from '../volumes/models.js';
 import { volumeAttachmentToJSON } from '../volumes/models.js';
 import { expandVaultRefs } from '../vault/vault.js';
+import { newIdempotencyKey } from '../api/idempotency.js';
 
 /** Options for creating a sandbox. */
 export interface SandboxOpts {
@@ -267,9 +268,16 @@ export class Sandbox {
       body.volumes = opts.volumes.map(volumeAttachmentToJSON);
     }
 
+    // One key per LOGICAL create, generated here so every retry inside the
+    // client reuses it. Generating it per attempt would defeat the mechanism
+    // entirely — the server would treat each retry as a new create, which is the
+    // duplicate-sandbox bug the key exists to fix. An empty key (no CSPRNG
+    // available) sends no header, leaving behavior exactly as it was.
+    const idempotencyKey = newIdempotencyKey();
     const data = (await client.post('/sandboxes', {
       json: body,
       timeout: opts?.requestTimeout,
+      ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
     })) as Record<string, unknown>;
 
     const sandboxId = data.sandbox_id as string;

@@ -4,16 +4,28 @@
 export class SandboxError extends Error {
   sandboxId?: string;
 
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  /**
+   * Machine-readable error code from the API's `code` field, when present.
+   *
+   * Branch on this, never on `message`. Messages are prose and change; codes are
+   * contract. It matters most where one status means several unrelated things:
+   * a 409 from `POST /sandboxes` is either `idempotency_in_progress` (the
+   * original create is still running — retry the identical request) or
+   * `template_not_ready` (rebuild the template; retrying cannot help).
+   */
+  code?: string;
+
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message);
     this.name = 'SandboxError';
     this.sandboxId = opts?.sandboxId;
+    this.code = opts?.code;
   }
 }
 
 /** Thrown when an operation exceeds its timeout. */
 export class TimeoutError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'TimeoutError';
   }
@@ -21,7 +33,7 @@ export class TimeoutError extends SandboxError {
 
 /** Thrown when a sandbox or resource is not found. */
 export class NotFoundError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'NotFoundError';
   }
@@ -29,7 +41,7 @@ export class NotFoundError extends SandboxError {
 
 /** Thrown when authentication fails. */
 export class AuthenticationError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'AuthenticationError';
   }
@@ -37,7 +49,7 @@ export class AuthenticationError extends SandboxError {
 
 /** Thrown when an argument is invalid. */
 export class InvalidArgumentError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'InvalidArgumentError';
   }
@@ -45,7 +57,7 @@ export class InvalidArgumentError extends SandboxError {
 
 /** Thrown when there is not enough disk space. */
 export class NotEnoughSpaceError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'NotEnoughSpaceError';
   }
@@ -61,7 +73,7 @@ export class NotEnoughSpaceError extends SandboxError {
  * Catch this to re-read and retry.
  */
 export class ConflictError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'ConflictError';
   }
@@ -69,7 +81,7 @@ export class ConflictError extends SandboxError {
 
 /** Thrown for template-related errors. */
 export class TemplateError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'TemplateError';
   }
@@ -77,7 +89,7 @@ export class TemplateError extends SandboxError {
 
 /** Thrown when a template build fails. */
 export class BuildError extends TemplateError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'BuildError';
   }
@@ -85,7 +97,7 @@ export class BuildError extends TemplateError {
 
 /** Thrown when a file upload fails. */
 export class FileUploadError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'FileUploadError';
   }
@@ -93,7 +105,7 @@ export class FileUploadError extends SandboxError {
 
 /** Thrown when git authentication fails inside a sandbox. */
 export class GitAuthError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'GitAuthError';
   }
@@ -101,7 +113,7 @@ export class GitAuthError extends SandboxError {
 
 /** Thrown when a git upstream operation fails. */
 export class GitUpstreamError extends SandboxError {
-  constructor(message: string, opts?: { sandboxId?: string }) {
+  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
     super(message, opts);
     this.name = 'GitUpstreamError';
   }

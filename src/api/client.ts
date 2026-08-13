@@ -1,4 +1,5 @@
 import { ConnectionConfig } from '../connectionConfig.js';
+import { CODE_IDEMPOTENCY_IN_PROGRESS, retryAfterMs } from './idempotency.js';
 import {
   SandboxError,
   TimeoutError,
@@ -126,7 +127,10 @@ export interface RequestOpts {
 }
 
 /** Map of HTTP status codes to error classes. */
-const STATUS_ERROR_MAP: Record<number, new (message: string) => SandboxError> = {
+const STATUS_ERROR_MAP: Record<
+  number,
+  new (message: string, opts?: { sandboxId?: string; code?: string }) => SandboxError
+> = {
   400: InvalidArgumentError,
   401: AuthenticationError,
   403: AuthenticationError,
@@ -295,6 +299,25 @@ export class ApiClient {
           continue;
         }
 
+        // A 409 carrying idempotency_in_progress means the ORIGINAL create is
+        // still running and this key already owns it. Retrying the identical
+        // request is not a duplicate — it is how the caller recovers the sandbox
+        // ID when the first response was lost, which is the whole point of
+        // sending the key. Branch on the code, never the status: 409 on this
+        // endpoint also means template_not_ready, which retrying cannot fix.
+        if (response.status === 409 && attempt < this.maxRetries - 1) {
+          const parsed = await this.readErrorBody(response);
+          if (parsed.code === CODE_IDEMPOTENCY_IN_PROGRESS) {
+            const after = retryAfterMs(response);
+            await (after !== undefined
+              ? new Promise((r) => setTimeout(r, after))
+              : this.delay(attempt));
+            continue;
+          }
+          // The body is spent, so the error must come from what was just read.
+          throw this.errorFrom(response, parsed);
+        }
+
         // Non-success: map to error
         if (!response.ok) {
           throw await this.buildError(response);
@@ -331,21 +354,43 @@ export class ApiClient {
     );
   }
 
-  private async buildError(response: Response): Promise<SandboxError> {
-    let message: string;
+  /**
+   * Read an error body ONCE.
+   *
+   * `Response` bodies are single-read streams, so the 409 path cannot inspect
+   * the code and then hand the response to a separate error builder — the
+   * second read yields nothing and the error loses its message. Everything that
+   * needs the body goes through here, and the parsed result is passed around
+   * instead of the response.
+   */
+  private async readErrorBody(
+    response: Response,
+  ): Promise<{ message: string; code?: string }> {
     try {
-      const body = await response.json() as Record<string, unknown>;
+      const body = JSON.parse(await response.text()) as Record<string, unknown>;
       const bodyMsg = body.message ?? body.error ?? response.statusText;
-      message = `HTTP ${response.status}: ${bodyMsg}`;
+      return {
+        message: `HTTP ${response.status}: ${bodyMsg}`,
+        code: typeof body.code === 'string' ? body.code : undefined,
+      };
     } catch {
-      message = `HTTP ${response.status}: ${response.statusText}`;
+      return { message: `HTTP ${response.status}: ${response.statusText}` };
     }
+  }
 
+  private errorFrom(
+    response: Response,
+    parsed: { message: string; code?: string },
+  ): SandboxError {
     const ErrorClass = STATUS_ERROR_MAP[response.status];
     if (ErrorClass) {
-      return new ErrorClass(message);
+      return new ErrorClass(parsed.message, { code: parsed.code });
     }
-    return new SandboxError(message);
+    return new SandboxError(parsed.message, { code: parsed.code });
+  }
+
+  private async buildError(response: Response): Promise<SandboxError> {
+    return this.errorFrom(response, await this.readErrorBody(response));
   }
 
   private async parseResponseBody(response: Response): Promise<unknown> {
