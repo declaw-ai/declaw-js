@@ -89,9 +89,19 @@ export class TemplateError extends SandboxError {
 
 /** Thrown when a template build fails. */
 export class BuildError extends TemplateError {
-  constructor(message: string, opts?: { sandboxId?: string; code?: string }) {
+  /** The failed build's ID, when the error comes from a build that ran (`Template.build`). */
+  buildId?: string;
+  /** The failed build's full output, when the error comes from a build that ran. */
+  logs: string[];
+
+  constructor(
+    message: string,
+    opts?: { sandboxId?: string; code?: string; buildId?: string; logs?: string[] },
+  ) {
     super(message, opts);
     this.name = 'BuildError';
+    this.buildId = opts?.buildId;
+    this.logs = opts?.logs ?? [];
   }
 }
 

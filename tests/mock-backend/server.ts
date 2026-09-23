@@ -620,25 +620,33 @@ addRoute('POST', '/sandboxes/:sandbox_id/files/watch', async (_req, res, params)
 
 // --- Templates ---
 
-// POST /templates/build — mock build
+// POST /templates/build — mock build. Like sandbox-manager: the spec is nested
+// under "template", the alias is required, and starting a build always answers
+// "building" with no logs; the logs only come from GET /templates/builds/:id.
+const builds = new Map<string, string>(); // build_id -> template_id
 addRoute('POST', '/templates/build', async (req, res) => {
   const body = await parseJsonBody(req);
-  const buildId = `build-${shortId()}`;
-  const status = body.background ? 'building' : 'completed';
-  sendJson(res, {
-    build_id: buildId,
-    status,
-    template_id: `tpl-${(body.alias as string) ?? 'custom'}`,
-    logs: ['Step 1: Building...', 'Step 2: Done.'],
-  });
+  if (!body.alias) {
+    sendJson(res, { message: 'alias is required' }, 400);
+    return;
+  }
+  const buildId = `bld-${shortId()}`;
+  builds.set(buildId, `tpl-${shortId()}`);
+  sendJson(res, { build_id: buildId, status: 'building', template_id: builds.get(buildId) }, 201);
 });
 
 // GET /templates/builds/:build_id — mock build status
 addRoute('GET', '/templates/builds/:build_id', async (_req, res, params) => {
+  const templateId = builds.get(params.build_id);
+  if (!templateId) {
+    sendJson(res, { message: 'build not found' }, 404);
+    return;
+  }
   sendJson(res, {
     build_id: params.build_id,
     status: 'completed',
-    logs: ['Done.'],
+    template_id: templateId,
+    logs: ['Step 1: Building...', 'Step 2: Done.'],
   });
 });
 

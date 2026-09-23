@@ -48,7 +48,13 @@ export class TemplateBase {
     return this;
   }
 
-  /** Add a file copy operation. */
+  /**
+   * Copy a local file into the template.
+   *
+   * Not supported yet: a template build cannot upload local files, so
+   * building a template that uses `copy()` throws `InvalidArgumentError`.
+   * Fetch the file in a `runCmd` step, or use `fromDockerfile`.
+   */
   copy(src: string, dst: string, mode?: number): this {
     this._copies.push({ src, dst, mode });
     return this;
@@ -72,6 +78,15 @@ export class TemplateBase {
     return this;
   }
 
+  /**
+   * Whether `copy()` was used. Builds reject such a template until builds can
+   * upload local files.
+   * @internal
+   */
+  hasCopies(): boolean {
+    return this._copies.length > 0;
+  }
+
   /** Serialize the template to a JSON-friendly object. */
   toJSON(): Record<string, any> {
     // Raw Dockerfile path: send only the dockerfile field; the server
@@ -79,6 +94,10 @@ export class TemplateBase {
     if (this._dockerfile !== undefined) {
       return { dockerfile: this._dockerfile };
     }
+    // Field names are the server's (models.TemplateSpec). It ignores any name
+    // it does not know, so a misnamed field is silently dropped — which is how
+    // aptInstall() once did nothing. Copies are not serialized: builds reject
+    // them before sending.
     const result: Record<string, any> = {
       base_image: this._baseImage,
     };
@@ -91,16 +110,12 @@ export class TemplateBase {
       result.run_cmds = this._runCmds.map((c) => c.join(' '));
     }
 
-    if (this._copies.length > 0) {
-      result.copies = this._copies;
-    }
-
     if (Object.keys(this._envs).length > 0) {
       result.envs = this._envs;
     }
 
     if (this._aptPackages.length > 0) {
-      result.apt_packages = this._aptPackages;
+      result.packages = this._aptPackages;
     }
 
     if (this._startCmd !== undefined) {
@@ -114,8 +129,14 @@ export class TemplateBase {
 /** Information about a template build. */
 export interface BuildInfo {
   buildId: string;
+  /** `building`, then `completed` or `failed`. */
   status: string;
   templateId?: string;
+  /**
+   * Build output. Empty in the response to starting a build; filled when
+   * `Template.build()` returns a finished build.
+   */
+  logs: string[];
 }
 
 /** Parse raw JSON data into BuildInfo. */
@@ -124,14 +145,18 @@ export function parseBuildInfo(data: Record<string, any>): BuildInfo {
     buildId: data.build_id ?? data.buildId ?? '',
     status: data.status ?? '',
     templateId: data.template_id ?? data.templateId ?? undefined,
+    logs: data.logs ?? [],
   };
 }
 
 /** Status of a template build. */
 export interface TemplateBuildStatus {
   buildId: string;
+  /** `building`, then `completed` or `failed`. */
   status: string;
+  /** Build output so far. */
   logs: string[];
+  templateId?: string;
 }
 
 /** Parse raw JSON data into TemplateBuildStatus. */
@@ -139,6 +164,8 @@ export function parseTemplateBuildStatus(data: Record<string, any>): TemplateBui
   return {
     buildId: data.build_id ?? data.buildId ?? '',
     status: data.status ?? '',
+    // A build with no output yet serializes its logs as null.
     logs: data.logs ?? [],
+    templateId: data.template_id ?? data.templateId ?? undefined,
   };
 }

@@ -12,23 +12,31 @@ describe('TemplateBase', () => {
     expect(json.base_image).toBe('ubuntu:22.04');
   });
 
-  it('supports fluent API', () => {
+  it('supports fluent API and serializes with the server field names', () => {
     const tmpl = new TemplateBase()
       .fromBaseImage('node:20')
       .aptInstall('curl', 'git')
       .runCmd(['npm', 'install'])
-      .copy('/local/app', '/app', 0o755)
       .setEnvs({ NODE_ENV: 'production' })
       .setStartCmd('node /app/index.js');
 
-    const json = tmpl.toJSON();
-    expect(json.base_image).toBe('node:20');
-    expect(json.apt_packages).toEqual(['curl', 'git']);
-    // run_cmds are serialized as space-joined shell lines per fix #233
-    expect(json.run_cmds).toEqual(['npm install']);
-    expect(json.copies).toEqual([{ src: '/local/app', dst: '/app', mode: 0o755 }]);
-    expect(json.envs).toEqual({ NODE_ENV: 'production' });
-    expect(json.start_cmd).toBe('node /app/index.js');
+    // Exactly the server's names: it silently ignores any other field, so
+    // "apt_packages" once installed nothing. run_cmds are space-joined shell
+    // lines per fix #233.
+    expect(tmpl.toJSON()).toEqual({
+      base_image: 'node:20',
+      packages: ['curl', 'git'],
+      run_cmds: ['npm install'],
+      envs: { NODE_ENV: 'production' },
+      start_cmd: 'node /app/index.js',
+    });
+  });
+
+  it('records copy() but never serializes it', () => {
+    const tmpl = new TemplateBase().copy('/local/app', '/app', 0o755);
+    expect(tmpl.hasCopies()).toBe(true);
+    expect(tmpl.toJSON()).toEqual({ base_image: 'ubuntu:22.04' });
+    expect(new TemplateBase().hasCopies()).toBe(false);
   });
 
   it('returns this from each method for chaining', () => {
@@ -47,7 +55,7 @@ describe('TemplateBase', () => {
     expect(json).not.toHaveProperty('run_cmds');
     expect(json).not.toHaveProperty('copies');
     expect(json).not.toHaveProperty('envs');
-    expect(json).not.toHaveProperty('apt_packages');
+    expect(json).not.toHaveProperty('packages');
     expect(json).not.toHaveProperty('start_cmd');
   });
 
@@ -68,7 +76,7 @@ describe('TemplateBase', () => {
   it('accumulates apt packages', () => {
     const tmpl = new TemplateBase().aptInstall('curl').aptInstall('wget', 'git');
     const json = tmpl.toJSON();
-    expect(json.apt_packages).toEqual(['curl', 'wget', 'git']);
+    expect(json.packages).toEqual(['curl', 'wget', 'git']);
   });
 
   it('fromBaseImage defaults to ubuntu:22.04 when called with undefined', () => {
@@ -87,6 +95,7 @@ describe('parseBuildInfo', () => {
     expect(info.buildId).toBe('bld-1');
     expect(info.status).toBe('building');
     expect(info.templateId).toBe('tmpl-1');
+    expect(info.logs).toEqual([]);
   });
 
   it('handles missing templateId', () => {
@@ -115,6 +124,11 @@ describe('parseTemplateBuildStatus', () => {
 
   it('defaults logs to empty array', () => {
     const status = parseTemplateBuildStatus({ build_id: 'bld-3', status: 'failed' });
+    expect(status.logs).toEqual([]);
+  });
+
+  it('treats null logs as none (a build with no output yet)', () => {
+    const status = parseTemplateBuildStatus({ build_id: 'bld-4', status: 'building', logs: null });
     expect(status.logs).toEqual([]);
   });
 });

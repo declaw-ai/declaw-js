@@ -5,6 +5,42 @@ All notable changes to the Declaw TypeScript / JavaScript SDK are documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0]
+
+_2026-09 train: working template builds._
+
+### Added
+
+- The `buildTimeout` option on `Template.build()`, `BuildInfo.logs`,
+  `TemplateBuildStatus.templateId`, `buildId` / `logs` on `BuildError`, and
+  `TemplateBase.hasCopies()`.
+- Status checks that fail temporarily while waiting (5xx, 408, 429, network
+  errors) are retried for up to two minutes instead of ending the wait. The
+  server keeps the newest 2,000 lines of a build's output; if more arrive
+  between two status checks, a `... [earlier build output truncated]` line
+  marks the gap.
+
+### Changed
+
+- `Template.build()` now waits for the build to finish, as documented, and
+  resolves to a `BuildInfo` whose `logs` hold the output. A failed build
+  rejects with `BuildError` carrying its `buildId` and `logs`. A build still
+  running after `buildTimeout` milliseconds (default one hour) rejects with
+  `TimeoutError` naming it; the build keeps running, and
+  `Template.getBuildStatus()` follows it. To return immediately, use
+  `Template.buildInBackground()`.
+- A template that uses `copy()` now rejects with `InvalidArgumentError` when
+  built, before anything is sent. `copy()` never copied anything: a build
+  cannot upload local files, and the copies were silently dropped. Fetch files
+  in a `runCmd` step, or use `fromDockerfile()`.
+
+### Fixed
+
+- Packages added with `aptInstall()` were sent under a name the API ignores,
+  so builds succeeded without installing them. They are now installed.
+- `onBuildLogs` never fired. It now receives each new line of build output
+  while `Template.build()` waits.
+
 ## [1.4.0]
 
 _2026-08 train: idempotent sandbox creation._
