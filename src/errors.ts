@@ -91,16 +91,28 @@ export class TemplateError extends SandboxError {
 export class BuildError extends TemplateError {
   /** The failed build's ID, when the error comes from a build that ran (`Template.build`). */
   buildId?: string;
+  /**
+   * The failed build's template ID, when the error comes from a build that
+   * ran: what `Template.rebuild()` takes to retry it.
+   */
+  templateId?: string;
   /** The failed build's full output, when the error comes from a build that ran. */
   logs: string[];
 
   constructor(
     message: string,
-    opts?: { sandboxId?: string; code?: string; buildId?: string; logs?: string[] },
+    opts?: {
+      sandboxId?: string;
+      code?: string;
+      buildId?: string;
+      templateId?: string;
+      logs?: string[];
+    },
   ) {
     super(message, opts);
     this.name = 'BuildError';
     this.buildId = opts?.buildId;
+    this.templateId = opts?.templateId;
     this.logs = opts?.logs ?? [];
   }
 }

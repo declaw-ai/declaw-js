@@ -190,7 +190,11 @@ export { SandboxPaginator, SnapshotPaginator } from './paginator.js';
 
 // Template
 export { Template } from './template/template.js';
-export type { TemplateBuildOpts, GetBuildStatusOpts } from './template/template.js';
+export type {
+  TemplateBuildOpts,
+  TemplateRebuildOpts,
+  GetBuildStatusOpts,
+} from './template/template.js';
 
 // Template models
 export { TemplateBase, parseBuildInfo, parseTemplateBuildStatus } from './template/models.js';

@@ -6,6 +6,7 @@ import { LogCursor, Template, buildPolling } from '../../../src/template/templat
 import { TemplateBase } from '../../../src/template/models.js';
 import {
   BuildError,
+  ConflictError,
   InvalidArgumentError,
   NotFoundError,
   SandboxError,
@@ -62,7 +63,111 @@ function mockBuild(statuses: ReturnType<typeof buildStatus>[]) {
   return calls;
 }
 
+/**
+ * Mock the rebuild endpoint the way sandbox-manager answers it: 202 "building"
+ * with no logs (or the 409 a template that is not `failed` gets), plus the
+ * status polls.
+ */
+function mockRebuild(statuses: ReturnType<typeof buildStatus>[], accept = true) {
+  const calls = { rebuilds: 0, bodies: [] as string[], polls: 0 };
+  server.use(
+    http.post(`${BASE_URL}/templates/tpl-1/rebuild`, async ({ request }) => {
+      calls.rebuilds++;
+      calls.bodies.push(await request.text());
+      if (!accept) {
+        return HttpResponse.json(
+          { message: 'template "a" is ready and cannot be rebuilt', code: 'template_immutable' },
+          { status: 409 },
+        );
+      }
+      return HttpResponse.json(
+        { build_id: 'bld-1', status: 'building', template_id: 'tpl-1' },
+        { status: 202 },
+      );
+    }),
+    http.get(`${BASE_URL}/templates/builds/bld-1`, () => {
+      const next = statuses[calls.polls++];
+      return next
+        ? HttpResponse.json(next)
+        : HttpResponse.json({ message: 'no more statuses' }, { status: 404 });
+    }),
+  );
+  return calls;
+}
+
 describe('Template', () => {
+  describe('rebuild()', () => {
+    it('posts no body and waits for completion, streaming each log line once', async () => {
+      const calls = mockRebuild([
+        buildStatus('building', ['Step 1/2']),
+        buildStatus('completed', ['Step 1/2', 'Step 2/2']),
+      ]);
+      const logs: string[] = [];
+      const result = await Template.rebuild('tpl-1', { onBuildLogs: (l) => logs.push(l), ...OPTS });
+
+      expect(calls.rebuilds).toBe(1);
+      expect(calls.bodies).toEqual(['']); // the server reuses the stored spec
+      expect(logs).toEqual(['Step 1/2', 'Step 2/2']);
+      expect(result).toEqual({
+        buildId: 'bld-1',
+        status: 'completed',
+        templateId: 'tpl-1',
+        logs: ['Step 1/2', 'Step 2/2'],
+      });
+      expect(calls.polls).toBe(2);
+    });
+
+    it('throws BuildError when the rebuild fails', async () => {
+      mockRebuild([buildStatus('failed', ['E: nope'])]);
+      const err = await Template.rebuild('tpl-1', OPTS).catch((e) => e);
+      expect(err).toBeInstanceOf(BuildError);
+      expect(err.buildId).toBe('bld-1');
+      expect(err.templateId).toBe('tpl-1');
+      expect(err.message).toContain('E: nope');
+    });
+
+    it('surfaces the 409 for a template that is not failed as ConflictError', async () => {
+      const calls = mockRebuild([], false);
+      const err = await Template.rebuild('tpl-1', OPTS).catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictError);
+      expect(err.message).toContain('cannot be rebuilt');
+      const bg = await Template.rebuildInBackground('tpl-1', OPTS).catch((e) => e);
+      expect(bg).toBeInstanceOf(ConflictError);
+      expect(calls.polls).toBe(0);
+    });
+
+    it('throws TimeoutError when the rebuild is still running at the deadline', async () => {
+      mockRebuild([
+        buildStatus('building', []),
+        buildStatus('building', []),
+        buildStatus('building', []),
+      ]);
+      const err = await Template.rebuild('tpl-1', { buildTimeout: 0, ...OPTS }).catch((e) => e);
+      expect(err).toBeInstanceOf(TimeoutError);
+      expect(err.message).toContain('bld-1');
+    });
+
+    it('rejects an unsafe template ID before sending any request', async () => {
+      const calls = mockRebuild([buildStatus('completed', [])]);
+      for (const id of ['', '../tpl-1', 'tpl 1']) {
+        const err = await Template.rebuild(id, OPTS).catch((e) => e);
+        expect(err).toBeInstanceOf(InvalidArgumentError);
+        const bg = await Template.rebuildInBackground(id, OPTS).catch((e) => e);
+        expect(bg).toBeInstanceOf(InvalidArgumentError);
+      }
+      expect(calls.rebuilds).toBe(0);
+    });
+  });
+
+  describe('rebuildInBackground()', () => {
+    it('returns the accepted build without polling', async () => {
+      const calls = mockRebuild([buildStatus('completed', [])]);
+      const info = await Template.rebuildInBackground('tpl-1', OPTS);
+      expect(info).toEqual({ buildId: 'bld-1', status: 'building', templateId: 'tpl-1', logs: [] });
+      expect(calls.polls).toBe(0);
+    });
+  });
+
   describe('build()', () => {
     it('sends exactly the server contract', async () => {
       const calls = mockBuild([buildStatus('completed', [])]);
@@ -130,6 +235,7 @@ describe('Template', () => {
 
       expect(err).toBeInstanceOf(BuildError);
       expect(err.buildId).toBe('bld-1');
+      expect(err.templateId).toBe('tpl-1'); // what Template.rebuild() takes
       expect(err.logs).toEqual(lines);
       expect(err.message).toContain('line 25');
       expect(err.message).toContain('line 06');
@@ -137,7 +243,11 @@ describe('Template', () => {
     });
 
     it('throws TimeoutError when the build is still running at the deadline', async () => {
-      mockBuild([buildStatus('building', []), buildStatus('building', []), buildStatus('building', [])]);
+      mockBuild([
+        buildStatus('building', []),
+        buildStatus('building', []),
+        buildStatus('building', []),
+      ]);
       const err = await Template.build(makeTemplate(), 'slow-tpl', {
         buildTimeout: 0,
         ...OPTS,
@@ -169,7 +279,12 @@ describe('Template', () => {
         ...OPTS,
       });
 
-      expect(result).toEqual({ buildId: 'bld-1', status: 'building', templateId: 'tpl-1', logs: [] });
+      expect(result).toEqual({
+        buildId: 'bld-1',
+        status: 'building',
+        templateId: 'tpl-1',
+        logs: [],
+      });
       expect(calls.polls).toBe(0);
       expect(calls.bodies).toEqual([
         {
@@ -267,7 +382,10 @@ describe('Template.build() waiting', () => {
     const calls = { polls: 0 };
     server.use(
       http.post(`${BASE_URL}/templates/build`, () =>
-        HttpResponse.json({ build_id: 'bld-1', status: 'building', template_id: 'tpl-1' }, { status: 201 }),
+        HttpResponse.json(
+          { build_id: 'bld-1', status: 'building', template_id: 'tpl-1' },
+          { status: 201 },
+        ),
       ),
       http.get(`${BASE_URL}/templates/builds/bld-1`, () => respond(calls.polls++)),
     );
@@ -277,10 +395,18 @@ describe('Template.build() waiting', () => {
   it('streams each line once across the log cap', async () => {
     const totals = [1980, 2050, 2600, 3000];
     mockPolls((i) =>
-      HttpResponse.json(buildStatus(i >= totals.length - 1 ? 'completed' : 'building', storedLogs(totals[Math.min(i, totals.length - 1)]))),
+      HttpResponse.json(
+        buildStatus(
+          i >= totals.length - 1 ? 'completed' : 'building',
+          storedLogs(totals[Math.min(i, totals.length - 1)]),
+        ),
+      ),
     );
     const got: string[] = [];
-    const result = await Template.build(makeTemplate(), 'big', { onBuildLogs: (l) => got.push(l), ...OPTS });
+    const result = await Template.build(makeTemplate(), 'big', {
+      onBuildLogs: (l) => got.push(l),
+      ...OPTS,
+    });
     expect(got).toEqual(range(1, 3000));
     expect(result.status).toBe('completed');
   });
@@ -311,7 +437,9 @@ describe('Template.build() waiting', () => {
 
   it('stops at the deadline while status checks keep failing', async () => {
     mockPolls(() => HttpResponse.json({ message: 'slow down' }, { status: 429 }));
-    const err = await Template.build(makeTemplate(), 'flaky', { buildTimeout: 50, ...OPTS }).catch((e) => e);
+    const err = await Template.build(makeTemplate(), 'flaky', { buildTimeout: 50, ...OPTS }).catch(
+      (e) => e,
+    );
     expect(err).toBeInstanceOf(TimeoutError);
     expect(err.message).toContain('slow down');
   });
@@ -322,12 +450,15 @@ describe('Template.build() waiting', () => {
     const saved = buildPolling.errorWindowMs;
     buildPolling.errorWindowMs = 200;
     try {
-      const calls = mockPolls(() => HttpResponse.json({ message: 'build bld-1 not found' }, { status: 404 }));
-      await expect(Template.build(makeTemplate(), 'gone', OPTS)).rejects.toBeInstanceOf(NotFoundError);
+      const calls = mockPolls(() =>
+        HttpResponse.json({ message: 'build bld-1 not found' }, { status: 404 }),
+      );
+      await expect(Template.build(makeTemplate(), 'gone', OPTS)).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
       expect(calls.polls).toBe(1);
     } finally {
       buildPolling.errorWindowMs = saved;
     }
   });
 });
-

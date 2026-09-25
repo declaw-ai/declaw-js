@@ -5,6 +5,20 @@ All notable changes to the Declaw TypeScript / JavaScript SDK are documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0]
+
+_2026-09b train: template rebuild._
+
+### Added
+
+- `Template.rebuild()` / `Template.rebuildInBackground()` and the
+  `TemplateRebuildOpts` type: retry a template whose build failed
+  (`POST /templates/{id}/rebuild`), reusing its stored spec. `rebuild()` waits
+  like `build()`. A template that is not in the `failed` state throws
+  `ConflictError`. (#919)
+- `BuildError.templateId`: the failed build's template, so a retry is
+  `Template.rebuild(err.templateId)`. (#919)
+
 ## [1.5.0]
 
 _2026-09 train: working template builds._

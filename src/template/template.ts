@@ -150,6 +150,21 @@ export interface GetBuildStatusOpts {
 }
 
 /**
+ * Options for Template.rebuild() and Template.rebuildInBackground(). A rebuild
+ * reuses the template's stored spec, so there are no resources to set.
+ */
+export type TemplateRebuildOpts = Omit<TemplateBuildOpts, 'cpuCount' | 'memoryMb' | 'diskMb'>;
+
+/** Validate that a template ID is safe for URL path interpolation. */
+function assertValidTemplateId(templateId: string): void {
+  if (!templateId || !VALID_BUILD_ID_RE.test(templateId)) {
+    throw new InvalidArgumentError(
+      `Invalid template ID: "${templateId}". Must be alphanumeric with hyphens/underscores only.`,
+    );
+  }
+}
+
+/**
  * Body for `POST /templates/build`: the spec nested under `template`, with the
  * alias and resources beside it.
  */
@@ -189,7 +204,85 @@ function buildFailedError(status: TemplateBuildStatus): BuildError {
   if (tail.length > 0) {
     message += ':\n' + tail.join('\n');
   }
-  return new BuildError(message, { buildId: status.buildId, logs: status.logs });
+  return new BuildError(message, {
+    buildId: status.buildId,
+    templateId: status.templateId,
+    logs: status.logs,
+  });
+}
+
+/**
+ * Poll a started build until it finishes: the loop `build()` and `rebuild()`
+ * share. Resolves with the completed build, throws `BuildError` for a failed
+ * one and `TimeoutError` at `buildTimeout` (the build keeps running).
+ */
+async function waitForBuild(
+  client: ReturnType<typeof getSharedClient>,
+  info: BuildInfo,
+  opts?: Pick<TemplateBuildOpts, 'onBuildLogs' | 'buildTimeout' | 'requestTimeout'>,
+): Promise<BuildInfo> {
+  let status: TemplateBuildStatus = {
+    buildId: info.buildId,
+    status: info.status,
+    logs: info.logs,
+    templateId: info.templateId,
+  };
+  const buildTimeout = opts?.buildTimeout ?? DEFAULT_BUILD_TIMEOUT_MS;
+  const deadline = Date.now() + buildTimeout;
+  const timedOut = (cause?: unknown) =>
+    new TimeoutError(
+      `template build ${info.buildId} was still running after ${buildTimeout}ms. ` +
+        `It keeps running; follow it with Template.getBuildStatus('${info.buildId}').` +
+        (cause instanceof Error ? ` Last status check: ${cause.message}` : ''),
+    );
+  const cursor = new LogCursor();
+  for (;;) {
+    if (opts?.onBuildLogs) {
+      for (const line of cursor.newLines(status.logs)) {
+        opts.onBuildLogs(line);
+      }
+    }
+
+    if (status.status === BUILD_STATUS_COMPLETED) {
+      return {
+        buildId: status.buildId,
+        status: status.status,
+        templateId: status.templateId ?? info.templateId,
+        logs: status.logs,
+      };
+    }
+    if (status.status === BUILD_STATUS_FAILED) {
+      throw buildFailedError(status);
+    }
+    if (Date.now() >= deadline) {
+      throw timedOut();
+    }
+
+    // Read the next status, repeating through temporary failures for up to
+    // buildPolling.errorWindowMs (and never past the deadline).
+    let failingSince: number | undefined;
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, buildPolling.intervalMs));
+      try {
+        const next = await client.get(`/templates/builds/${info.buildId}`, {
+          timeout: opts?.requestTimeout,
+        });
+        status = parseTemplateBuildStatus(next as Record<string, unknown>);
+        break;
+      } catch (err) {
+        if (!isTemporaryPollError(err)) {
+          throw err;
+        }
+        failingSince ??= Date.now();
+        if (Date.now() - failingSince >= buildPolling.errorWindowMs) {
+          throw err;
+        }
+        if (Date.now() >= deadline) {
+          throw timedOut(err);
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -232,68 +325,7 @@ export class Template {
     const info = parseBuildInfo(data as Record<string, unknown>);
     assertValidBuildId(info.buildId);
 
-    let status: TemplateBuildStatus = {
-      buildId: info.buildId,
-      status: info.status,
-      logs: info.logs,
-      templateId: info.templateId,
-    };
-    const buildTimeout = opts?.buildTimeout ?? DEFAULT_BUILD_TIMEOUT_MS;
-    const deadline = Date.now() + buildTimeout;
-    const timedOut = (cause?: unknown) =>
-      new TimeoutError(
-        `template build ${info.buildId} was still running after ${buildTimeout}ms. ` +
-          `It keeps running; follow it with Template.getBuildStatus('${info.buildId}').` +
-          (cause instanceof Error ? ` Last status check: ${cause.message}` : ''),
-      );
-    const cursor = new LogCursor();
-    for (;;) {
-      if (opts?.onBuildLogs) {
-        for (const line of cursor.newLines(status.logs)) {
-          opts.onBuildLogs(line);
-        }
-      }
-
-      if (status.status === BUILD_STATUS_COMPLETED) {
-        return {
-          buildId: status.buildId,
-          status: status.status,
-          templateId: status.templateId ?? info.templateId,
-          logs: status.logs,
-        };
-      }
-      if (status.status === BUILD_STATUS_FAILED) {
-        throw buildFailedError(status);
-      }
-      if (Date.now() >= deadline) {
-        throw timedOut();
-      }
-
-      // Read the next status, repeating through temporary failures for up to
-      // buildPolling.errorWindowMs (and never past the deadline).
-      let failingSince: number | undefined;
-      for (;;) {
-        await new Promise((resolve) => setTimeout(resolve, buildPolling.intervalMs));
-        try {
-          const next = await client.get(`/templates/builds/${info.buildId}`, {
-            timeout: opts?.requestTimeout,
-          });
-          status = parseTemplateBuildStatus(next as Record<string, unknown>);
-          break;
-        } catch (err) {
-          if (!isTemporaryPollError(err)) {
-            throw err;
-          }
-          failingSince ??= Date.now();
-          if (Date.now() - failingSince >= buildPolling.errorWindowMs) {
-            throw err;
-          }
-          if (Date.now() >= deadline) {
-            throw timedOut(err);
-          }
-        }
-      }
-    }
+    return waitForBuild(client, info, opts);
   }
 
   /**
@@ -315,6 +347,63 @@ export class Template {
 
     const data = await client.post('/templates/build', {
       json: body,
+      timeout: opts?.requestTimeout,
+    });
+
+    return parseBuildInfo(data as Record<string, unknown>);
+  }
+
+  /**
+   * Re-run the build of a template whose last build failed, and wait for it
+   * like `build()`: it resolves with the completed build, throws `BuildError`
+   * for a failed one and `TimeoutError` at `buildTimeout` (the build keeps
+   * running; follow it with `getBuildStatus()`).
+   *
+   * Templates are immutable once built, so this is a recovery path only: the
+   * rebuild reuses the template's stored spec, and a template that is `ready`,
+   * or whose build is still running, is refused with `ConflictError`. A failed
+   * template keeps its alias — `build()` with the same alias is refused with a
+   * `ConflictError` naming the template to rebuild — and rebuilding is cheaper
+   * than deleting it and starting over.
+   *
+   * Sends POST /templates/:templateId/rebuild.
+   */
+  static async rebuild(templateId: string, opts?: TemplateRebuildOpts): Promise<BuildInfo> {
+    assertValidTemplateId(templateId);
+    const config = new ConnectionConfig({
+      apiKey: opts?.apiKey,
+      domain: opts?.domain,
+      requestTimeout: opts?.requestTimeout,
+    });
+    const client = getSharedClient(config);
+
+    const data = await client.post(`/templates/${templateId}/rebuild`, {
+      timeout: opts?.requestTimeout,
+    });
+    const info = parseBuildInfo(data as Record<string, unknown>);
+    assertValidBuildId(info.buildId);
+
+    return waitForBuild(client, info, opts);
+  }
+
+  /**
+   * Queue a rebuild of a failed template and return as soon as the server has
+   * accepted it, with status `building`. Follow the build with
+   * `getBuildStatus()`. See `rebuild()` for when a rebuild is allowed.
+   */
+  static async rebuildInBackground(
+    templateId: string,
+    opts?: Omit<TemplateRebuildOpts, 'onBuildLogs' | 'buildTimeout'>,
+  ): Promise<BuildInfo> {
+    assertValidTemplateId(templateId);
+    const config = new ConnectionConfig({
+      apiKey: opts?.apiKey,
+      domain: opts?.domain,
+      requestTimeout: opts?.requestTimeout,
+    });
+    const client = getSharedClient(config);
+
+    const data = await client.post(`/templates/${templateId}/rebuild`, {
       timeout: opts?.requestTimeout,
     });
 
